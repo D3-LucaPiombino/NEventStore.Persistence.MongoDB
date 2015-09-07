@@ -3,6 +3,7 @@ using System.Configuration;
 using NEventStore.Persistence.AcceptanceTests.BDD;
 using NEventStore.Serialization;
 using Xunit;
+using System.Threading.Tasks;
 
 namespace NEventStore.Persistence.MongoDB.Tests.AcceptanceTests.Issues
 {
@@ -11,12 +12,12 @@ namespace NEventStore.Persistence.MongoDB.Tests.AcceptanceTests.Issues
         private Exception _error;
         private const string InvalidConnectionStringName = "this_is_not_a_connection_string";
 
-        protected override void Context()
+        protected override Task Context()
         {
-            
+            return Task.FromResult(true);
         }
 
-        protected override void Because()
+        protected override Task Because()
         {
             _error = Assert.Throws<ConfigurationErrorsException>(() =>
             {
@@ -24,6 +25,7 @@ namespace NEventStore.Persistence.MongoDB.Tests.AcceptanceTests.Issues
                     .UsingMongoPersistence(InvalidConnectionStringName, new DocumentObjectSerializer())
                     .Build();
             });
+            return Task.FromResult(true);
         }
 
         [Fact]

@@ -12,7 +12,10 @@ namespace NEventStore.Persistence.MongoDB.Tests.AcceptanceTests
     using NEventStore.Persistence.AcceptanceTests;
     using NEventStore.Persistence.AcceptanceTests.BDD;
     using Xunit;
-    using Xunit.Should;
+
+    using System.Threading.Tasks;
+    using ALinq;
+    using FluentAssertions;
 
     public class Observer : IObserver<ICommit>
     {
@@ -54,7 +57,7 @@ namespace NEventStore.Persistence.MongoDB.Tests.AcceptanceTests
         private IObserveCommits _observeCommits;
         private IDisposable _subscription;
 
-        protected override void Context()
+        protected override async Task Context()
         {
             for (int c = 1; c <= ParallelWriters; c++)
             {
@@ -62,8 +65,8 @@ namespace NEventStore.Persistence.MongoDB.Tests.AcceptanceTests
 
                 if (c == 1)
                 {
-                    client.Drop();
-                    client.Initialize();
+                    await client.Drop();
+                    await client.Initialize();
                 }
 
                 _writers.Add(client);
@@ -76,57 +79,53 @@ namespace NEventStore.Persistence.MongoDB.Tests.AcceptanceTests
 
             _observeCommits = _client.ObserveFrom(null);
             _subscription = _observeCommits.Subscribe(_observer);
-            _observeCommits.Start();
+            await _observeCommits.Start();
         }
 
-        protected override void Because()
+        protected override async Task Because()
         {
-            var start = new ManualResetEventSlim(false);
-            var stop = new ManualResetEventSlim(false);
-            long counter = 0;
+            var start = new SemaphoreSlim(0);
+            var stop = new SemaphoreSlim(0);
+            //long counter = 0;
             var rnd = new Random(DateTime.Now.Millisecond);
 
-
-            for (int t = 0; t < ParallelWriters; t++)
-            {
-                int t1 = t;
-                var runner = new Thread(() =>
+            var runners = Enumerable
+                .Range(0, ParallelWriters)
+                .Select(i => Task.Run(async () =>
                 {
-                    start.Wait();
+                    await start.WaitAsync();
                     for (int c = 0; c < IterationsPerWriter; c++)
                     {
                         try
                         {
-                            _writers[t1].Commit(Guid.NewGuid().ToString().BuildAttempt());
+                            await _writers[i].Commit(Guid.NewGuid().ToString().BuildAttempt());
                         }
                         catch (Exception ex)
                         {
                             Debug.WriteLine(ex.Message);
                             throw;
                         }
-                        Thread.Sleep(rnd.Next(2));
+                        await Task.Delay(rnd.Next(2));
                     }
-                    Interlocked.Increment(ref counter);
-                    if (counter == ParallelWriters)
-                    {
-                        stop.Set();
-                    }
-                });
+                    //Interlocked.Increment(ref counter);
+                    //if (counter == ParallelWriters)
+                    //{
+                    //    stop.Release(1);
+                    //}
+                }));
+            
 
-                runner.Start();
-            }
+            start.Release(ParallelWriters);
+            await Task.WhenAll(runners);
 
-            start.Set();
-            stop.Wait();
-
-            Thread.Sleep(1500);
+            await Task.Delay(1500);
             _subscription.Dispose();
         }
 
         [Fact]
         public void should_never_miss_a_commit()
         {
-            _observer.Counter.ShouldBe(IterationsPerWriter * ParallelWriters);
+            _observer.Counter.Should().Be(IterationsPerWriter * ParallelWriters);
         }
 
         protected override void Cleanup()
@@ -144,39 +143,40 @@ namespace NEventStore.Persistence.MongoDB.Tests.AcceptanceTests
     public class when_first_commit_is_persisted : PersistenceEngineConcern
     {
         ICommit _commit;
-        protected override void Context()
+        protected override Task Context()
         {
+            return Task.FromResult(true);
         }
 
-        protected override void Because()
+        protected override async Task Because()
         {
-            _commit = Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
+            _commit = await Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
         }
 
         [Fact]
         public void should_have_checkpoint_equal_to_one()
         {
-            LongCheckpoint.Parse(_commit.CheckpointToken).LongValue.ShouldBe(1);
+            LongCheckpoint.Parse(_commit.CheckpointToken).LongValue.Should().Be(1);
         }
     }
 
     public class when_second_commit_is_persisted : PersistenceEngineConcern
     {
         ICommit _commit;
-        protected override void Context()
+        protected override Task Context()
         {
-            Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
+            return Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
         }
 
-        protected override void Because()
+        protected override async Task Because()
         {
-            _commit = Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
+            _commit = await Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
         }
 
         [Fact]
         public void should_have_checkpoint_equal_to_two()
         {
-            LongCheckpoint.Parse(_commit.CheckpointToken).LongValue.ShouldBe(2);
+            LongCheckpoint.Parse(_commit.CheckpointToken).LongValue.Should().Be(2);
         }
 
     }
@@ -184,21 +184,21 @@ namespace NEventStore.Persistence.MongoDB.Tests.AcceptanceTests
     public class when_commit_is_persisted_after_a_stream_deletion : PersistenceEngineConcern
     {
         ICommit _commit;
-        protected override void Context()
+        protected override async Task Context()
         {
-            var commit = Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
-            Persistence.DeleteStream(commit.BucketId, commit.StreamId);
+            var commit = await Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
+            await Persistence.DeleteStream(commit.BucketId, commit.StreamId);
         }
 
-        protected override void Because()
+        protected override async Task Because()
         {
-            _commit = Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
+            _commit = await Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
         }
 
         [Fact]
         public void should_have_checkpoint_equal_to_two()
         {
-            LongCheckpoint.Parse(_commit.CheckpointToken).LongValue.ShouldBe(2);
+            LongCheckpoint.Parse(_commit.CheckpointToken).LongValue.Should().Be(2);
         }
     }
 
@@ -208,45 +208,57 @@ namespace NEventStore.Persistence.MongoDB.Tests.AcceptanceTests
         const int Clients = 10;
         string _checkpointToken;
 
-        protected override void Context()
+        protected override async Task Context()
         {
             var lazyInitializer = Persistence;
 
-            var start = new ManualResetEventSlim(false);
-            var stop = new ManualResetEventSlim(false);
-            int counter = 0;
+            var start = new SemaphoreSlim(0);
+            //var stop = new ManualResetEventSlim(false);
+            //int counter = 0;
 
-            for (int c = 0; c < Clients; c++)
-            {
-                new Thread(() =>
+            var runners = Enumerable
+                .Range(0, Clients)
+                .Select(c => Task.Run(async () =>
                 {
-                    start.Wait();
+                    await start.WaitAsync();
                     for (int i = 0; i < Iterations; i++)
                     {
-                        var commit = Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
-                        Persistence.DeleteStream(commit.BucketId, commit.StreamId);
+                        var commit = await Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
+                        await Persistence.DeleteStream(commit.BucketId, commit.StreamId);
                     }
+                }));
 
-                    Interlocked.Increment(ref counter);
-                    if (counter >= Clients)
-                        stop.Set();
+            //for (int c = 0; c < Clients; c++)
+            //{
+            //    new Thread(() =>
+            //    {
+            //        start.Wait();
+            //        for (int i = 0; i < Iterations; i++)
+            //        {
+            //            var commit = Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
+            //            Persistence.DeleteStream(commit.BucketId, commit.StreamId);
+            //        }
 
-                }).Start();
-            }
+            //        Interlocked.Increment(ref counter);
+            //        if (counter >= Clients)
+            //            stop.Set();
 
-            start.Set();
-            stop.Wait();
+            //    }).Start();
+            //}
+
+            start.Release(Clients);
+            await Task.WhenAll(runners);
         }
 
-        protected override void Because()
+        protected override async Task Because()
         {
-            _checkpointToken = Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt()).CheckpointToken;
+            _checkpointToken = (await Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt())).CheckpointToken;
         }
 
         [Fact]
         public void should_have_correct_checkpoint()
         {
-            LongCheckpoint.Parse(_checkpointToken).LongValue.ShouldBe(Clients * Iterations + 1);
+            LongCheckpoint.Parse(_checkpointToken).LongValue.Should().Be(Clients * Iterations + 1);
         }
     }
 
@@ -254,45 +266,45 @@ namespace NEventStore.Persistence.MongoDB.Tests.AcceptanceTests
     {
         ICommit _commit;
 
-        protected override void Context()
+        protected override async Task Context()
         {
-            _commit = Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
+            _commit = await Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
         }
 
-        protected override void Because()
+        protected override Task Because()
         {
-            Persistence.DeleteStream(_commit.BucketId, _commit.StreamId);
-        }
-
-        [Fact]
-        public void the_commits_cannot_be_loaded_from_the_stream()
-        {
-            Persistence.GetFrom(_commit.StreamId, int.MinValue, int.MaxValue).ShouldBeEmpty();
+            return Persistence.DeleteStream(_commit.BucketId, _commit.StreamId);
         }
 
         [Fact]
-        public void the_commits_cannot_be_loaded_from_the_bucket()
+        public async Task the_commits_cannot_be_loaded_from_the_stream()
         {
-            Persistence.GetFrom(_commit.BucketId,DateTime.MinValue).ShouldBeEmpty();
+            (await Persistence.GetFrom(_commit.StreamId, int.MinValue, int.MaxValue).ToList()).Should().BeEmpty();
         }
 
         [Fact]
-        public void the_commits_cannot_be_loaded_from_the_checkpoint()
+        public async Task the_commits_cannot_be_loaded_from_the_bucket()
+        {
+            (await Persistence.GetFrom(_commit.BucketId,DateTime.MinValue).ToList()).Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task the_commits_cannot_be_loaded_from_the_checkpoint()
         {
             const string origin = null;
-            Persistence.GetFrom(origin).ShouldBeEmpty();
+            (await Persistence.GetFrom(origin).ToList()).Should().BeEmpty();
         }
 
         [Fact]
-        public void the_commits_cannot_be_loaded_from_bucket_and_start_date()
+        public async Task the_commits_cannot_be_loaded_from_bucket_and_start_date()
         {
-            Persistence.GetFrom(_commit.BucketId,DateTime.MinValue).ShouldBeEmpty();
+            (await Persistence.GetFrom(_commit.BucketId,DateTime.MinValue).ToList()).Should().BeEmpty();
         }
 
         [Fact]
-        public void the_commits_cannot_be_loaded_from_bucket_and_date_range()
+        public async Task the_commits_cannot_be_loaded_from_bucket_and_date_range()
         {
-            Persistence.GetFromTo(_commit.BucketId, DateTime.MinValue, DateTime.MaxValue).ShouldBeEmpty();
+            (await Persistence.GetFromTo(_commit.BucketId, DateTime.MinValue, DateTime.MaxValue).ToList()).Should().BeEmpty();
         }
     }
 
@@ -300,33 +312,33 @@ namespace NEventStore.Persistence.MongoDB.Tests.AcceptanceTests
     {
         ICommit[] _commits;
 
-        protected override void Context()
+        protected override async Task Context()
         {
-            Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
-            var commit = Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
-            Persistence.DeleteStream(commit.BucketId, commit.StreamId);
-            Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
-            commit = Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
-            Persistence.DeleteStream(commit.BucketId, commit.StreamId);
+            await Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
+            var commit = await Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
+            await Persistence.DeleteStream(commit.BucketId, commit.StreamId);
+            await Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
+            commit = await Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
+            await Persistence.DeleteStream(commit.BucketId, commit.StreamId);
         }
 
-        protected override void Because()
+        protected override async Task Because()
         {
             var mongoEngine = (MongoPersistenceEngine)(((PerformanceCounterPersistenceEngine)Persistence).UnwrapPersistenceEngine());
-            mongoEngine.EmptyRecycleBin();
-            _commits = mongoEngine.GetDeletedCommits().ToArray();
+            await mongoEngine.EmptyRecycleBin();
+            _commits = await mongoEngine.GetDeletedCommits().ToArray();
         }
 
         [Fact]
         public void last_deleted_commit_is_not_purged_to_preserve_checkpoint_numbering()
         {
-            _commits.Length.ShouldBe(1);
+            _commits.Length.Should().Be(1);
         }
 
         [Fact]
         public void last_deleted_commit_has_the_higher_checkpoint_number()
         {
-            LongCheckpoint.Parse(_commits[0].CheckpointToken).LongValue.ShouldBe(4);
+            LongCheckpoint.Parse(_commits[0].CheckpointToken).LongValue.Should().Be(4);
         }
     }
 
@@ -334,27 +346,27 @@ namespace NEventStore.Persistence.MongoDB.Tests.AcceptanceTests
     {
         ICommit[] _commits;
 
-        protected override void Context()
+        protected override async Task Context()
         {
-            Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
-            var commit = Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
-            Persistence.DeleteStream(commit.BucketId, commit.StreamId);
-            commit = Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
-            Persistence.DeleteStream(commit.BucketId, commit.StreamId);
-            Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
+            await Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
+            var commit = await Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
+            await Persistence.DeleteStream(commit.BucketId, commit.StreamId);
+            commit = await Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
+            await Persistence.DeleteStream(commit.BucketId, commit.StreamId);
+            await Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
         }
 
-        protected override void Because()
+        protected override async Task Because()
         {
             var mongoEngine = (MongoPersistenceEngine)(((PerformanceCounterPersistenceEngine)Persistence).UnwrapPersistenceEngine());
-            mongoEngine.EmptyRecycleBin();
-            _commits = mongoEngine.GetDeletedCommits().ToArray();
+            await mongoEngine.EmptyRecycleBin();
+            _commits = await mongoEngine.GetDeletedCommits().ToArray();
         }
 
         [Fact]
         public void all_deleted_commits_are_purged()
         {
-            _commits.Length.ShouldBe(0);
+            _commits.Length.Should().Be(0);
         }
     }
 
@@ -363,24 +375,24 @@ namespace NEventStore.Persistence.MongoDB.Tests.AcceptanceTests
         LongCheckpoint _checkpointBeforePurge;
         LongCheckpoint _checkpointAfterPurge;
 
-        protected override void Context()
+        protected override async Task Context()
         {
-            var commit = Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
+            var commit = await Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
             _checkpointBeforePurge = LongCheckpoint.Parse(commit.CheckpointToken);
-            Persistence.DeleteStream(commit.StreamId);
-            Persistence.Purge("default");
+            await Persistence.DeleteStream(commit.StreamId);
+            await Persistence.Purge("default");
         }
 
-        protected override void Because()
+        protected override async Task Because()
         {
-            var commit = Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
+            var commit = await Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
             _checkpointAfterPurge = LongCheckpoint.Parse(commit.CheckpointToken);
         }
 
         [Fact]
         public void checkpoint_number_must_be_greater_than ()
         {
-            _checkpointAfterPurge.ShouldBeGreaterThan(_checkpointBeforePurge);
+            _checkpointAfterPurge.LongValue.Should().BeGreaterThan(_checkpointBeforePurge.LongValue);
         }
     }
 
@@ -389,24 +401,24 @@ namespace NEventStore.Persistence.MongoDB.Tests.AcceptanceTests
         private string _streamId;
         private string _bucketId;
 
-        protected override void Context()
+        protected override async Task Context()
         {
             _streamId = Guid.NewGuid().ToString();
-            var commit = Persistence.Commit(_streamId.BuildAttempt());
+            var commit = await Persistence.Commit(_streamId.BuildAttempt());
             _bucketId = commit.BucketId;
 
-            Persistence.Commit(commit.BuildNextAttempt());
+            await Persistence.Commit(commit.BuildNextAttempt());
         }
 
-        protected override void Because()
+        protected override Task Because()
         {
-            Persistence.DeleteStream(_bucketId, _streamId);
+            return Persistence.DeleteStream(_bucketId, _streamId);
         }
 
         [Fact]
-        public void all_commits_are_deleted()
+        public async Task all_commits_are_deleted()
         {
-            var commits = Persistence.GetFrom(_bucketId, _streamId, int.MinValue, int.MaxValue).ToArray();
+            var commits = await Persistence.GetFrom(_bucketId, _streamId, int.MinValue, int.MaxValue).ToArray();
 
             Assert.Equal(0, commits.Length);
         }

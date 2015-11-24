@@ -85,7 +85,6 @@ namespace NEventStore.Persistence.MongoDB.Tests.AcceptanceTests
         protected override async Task Because()
         {
             var start = new SemaphoreSlim(0);
-            var stop = new SemaphoreSlim(0);
             //long counter = 0;
             var rnd = new Random(DateTime.Now.Millisecond);
 
@@ -107,13 +106,8 @@ namespace NEventStore.Persistence.MongoDB.Tests.AcceptanceTests
                         }
                         await Task.Delay(rnd.Next(2));
                     }
-                    //Interlocked.Increment(ref counter);
-                    //if (counter == ParallelWriters)
-                    //{
-                    //    stop.Release(1);
-                    //}
                 }));
-            
+
 
             start.Release(ParallelWriters);
             await Task.WhenAll(runners);
@@ -128,12 +122,12 @@ namespace NEventStore.Persistence.MongoDB.Tests.AcceptanceTests
             _observer.Counter.Should().Be(IterationsPerWriter * ParallelWriters);
         }
 
-        protected override void Cleanup()
+        protected override async Task Cleanup()
         {
             for (int c = 0; c < ParallelWriters; c++)
             {
                 if (c == ParallelWriters - 1)
-                    _writers[c].Drop();
+                    await _writers[c].Drop();
 
                 _writers[c].Dispose();
             }
@@ -213,9 +207,7 @@ namespace NEventStore.Persistence.MongoDB.Tests.AcceptanceTests
             var lazyInitializer = Persistence;
 
             var start = new SemaphoreSlim(0);
-            //var stop = new ManualResetEventSlim(false);
-            //int counter = 0;
-
+            
             var runners = Enumerable
                 .Range(0, Clients)
                 .Select(c => Task.Run(async () =>
@@ -228,23 +220,7 @@ namespace NEventStore.Persistence.MongoDB.Tests.AcceptanceTests
                     }
                 }));
 
-            //for (int c = 0; c < Clients; c++)
-            //{
-            //    new Thread(() =>
-            //    {
-            //        start.Wait();
-            //        for (int i = 0; i < Iterations; i++)
-            //        {
-            //            var commit = Persistence.Commit(Guid.NewGuid().ToString().BuildAttempt());
-            //            Persistence.DeleteStream(commit.BucketId, commit.StreamId);
-            //        }
-
-            //        Interlocked.Increment(ref counter);
-            //        if (counter >= Clients)
-            //            stop.Set();
-
-            //    }).Start();
-            //}
+            
 
             start.Release(Clients);
             await Task.WhenAll(runners);

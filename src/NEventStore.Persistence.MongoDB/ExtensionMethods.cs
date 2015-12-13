@@ -152,21 +152,23 @@
 
         public static FilterDefinition<BsonDocument> GetSnapshotQuery(string bucketId, string streamId, int maxRevision)
         {
-            return
+            var min = new BsonDocument();
+            min[MongoShapshotFields.BucketId] = bucketId;
+            min[MongoShapshotFields.StreamId] = streamId;
+            min[MongoShapshotFields.StreamRevision] = BsonNull.Value;
+
+            var max = new BsonDocument();
+            max[MongoShapshotFields.BucketId] = bucketId;
+            max[MongoShapshotFields.StreamId] = streamId;
+            max[MongoShapshotFields.StreamRevision] = maxRevision;
+
+            var query =
                 Builders<BsonDocument>.Filter.And(
-                    Builders<BsonDocument>.Filter.Gt(MongoShapshotFields.Id,
-                        Builders<BsonDocument>.Filter.And(
-                            Builders<BsonDocument>.Filter.Eq(MongoShapshotFields.BucketId, bucketId),
-                            Builders<BsonDocument>.Filter.Eq(MongoShapshotFields.StreamId, streamId),
-                            Builders<BsonDocument>.Filter.Eq(MongoShapshotFields.StreamRevision, BsonNull.Value)
-                        )),
-                    Builders<BsonDocument>.Filter.Lte(MongoShapshotFields.Id,
-                        Builders<BsonDocument>.Filter.And(
-                            Builders<BsonDocument>.Filter.Eq(MongoShapshotFields.BucketId, bucketId),
-                            Builders<BsonDocument>.Filter.Eq(MongoShapshotFields.StreamId, streamId),
-                            Builders<BsonDocument>.Filter.Eq(MongoShapshotFields.StreamRevision, maxRevision)
-                         ))
-                    );
+                    Builders<BsonDocument>.Filter.Gt(MongoShapshotFields.Id, min),
+                    Builders<BsonDocument>.Filter.Lte(MongoShapshotFields.Id, max)
+                );
+
+            return query;
         }
     }
 }

@@ -188,7 +188,7 @@
 
                return PersistedCommits
                    .Find(query)
-                   .Sort(MongoCommitFields.StreamRevisionFrom)
+                   .Sort(Builders<BsonDocument>.Sort.Ascending(MongoCommitFields.StreamRevisionFrom))
                    .Project(mc => mc.ToCommit(_serializer));
            })
            .ToAsyncEnumerable();
@@ -206,7 +206,7 @@
                         Builders<BsonDocument>.Filter.Gte(MongoCommitFields.CommitStamp, start)
                     )
                 )
-                .Sort(MongoCommitFields.CheckpointNumber)
+                .Sort(Builders<BsonDocument>.Sort.Ascending(MongoCommitFields.CheckpointNumber))
                 .Project(x => x.ToCommit(_serializer)))
                 .ToAsyncEnumerable();
         }
@@ -216,7 +216,7 @@
             var intCheckpoint = LongCheckpoint.Parse(checkpointToken);
             Logger.Debug(Messages.GettingAllCommitsFromBucketAndCheckpoint, bucketId, intCheckpoint.Value);
 
-            return TryMongo(() => 
+            return TryMongo(() =>
                 PersistedCommits
                .Find(
                    Builders<BsonDocument>.Filter.And(
@@ -224,7 +224,7 @@
                        Builders<BsonDocument>.Filter.Gt(MongoCommitFields.CheckpointNumber, intCheckpoint.LongValue)
                    )
                )
-               .Sort(MongoCommitFields.CheckpointNumber)
+               .Sort(Builders<BsonDocument>.Sort.Ascending(MongoCommitFields.CheckpointNumber))
                .Project(x => x.ToCommit(_serializer)))
                .ToAsyncEnumerable();
         }
@@ -241,7 +241,7 @@
                         Builders<BsonDocument>.Filter.Gt(MongoCommitFields.CheckpointNumber, intCheckpoint.LongValue)
                     )
                 )
-                .Sort(MongoCommitFields.CheckpointNumber)
+                .Sort(Builders<BsonDocument>.Sort.Ascending(MongoCommitFields.CheckpointNumber))
                 .Project(x => x.ToCommit(_serializer))
             )
             .ToAsyncEnumerable();
@@ -262,7 +262,7 @@
                    Builders<BsonDocument>.Filter.Gte(MongoCommitFields.CommitStamp, start),
                    Builders<BsonDocument>.Filter.Lt(MongoCommitFields.CommitStamp, end))
                )
-               .Sort(MongoCommitFields.CheckpointNumber)
+               .Sort(Builders<BsonDocument>.Sort.Ascending(MongoCommitFields.CheckpointNumber))
                .Project(x => x.ToCommit(_serializer)))
                 .ToAsyncEnumerable());
         }
@@ -389,7 +389,7 @@
 
             return TryMongo(() => PersistedCommits
                     .Find(Builders<BsonDocument>.Filter.Eq("Dispatched", false))
-                    .Sort(MongoCommitFields.CheckpointNumber)
+                    .Sort(Builders<BsonDocument>.Sort.Ascending(MongoCommitFields.CheckpointNumber))
                     .Project(mc => mc.ToCommit(_serializer)))
                     .ToAsyncEnumerable();
         }
@@ -596,10 +596,10 @@
             return id;
         }
 
-        public Task EmptyRecycleBin()
+        public async Task EmptyRecycleBin()
         {
-            var lastCheckpointNumber = _getLastCheckPointNumber();
-            return TryMongo(() =>
+            var lastCheckpointNumber = await _getLastCheckPointNumber();
+            await TryMongo(() =>
             {
                 return PersistedCommits.DeleteManyAsync(Builders<BsonDocument>.Filter.And(
                     Builders<BsonDocument>.Filter.Eq(MongoCommitFields.BucketId, MongoSystemBuckets.RecycleBin),
@@ -610,16 +610,16 @@
 
         public IAsyncEnumerable<ICommit> GetDeletedCommits()
         {
-            return TryMongo(() => 
+            return TryMongo(() =>
                 PersistedCommits
                     .Find(Builders<BsonDocument>.Filter.Eq(MongoCommitFields.BucketId, MongoSystemBuckets.RecycleBin))
-                    .Sort(MongoCommitFields.CheckpointNumber)
+                    .Sort(Builders<BsonDocument>.Sort.Ascending(MongoCommitFields.CheckpointNumber))
                     .Project(mc => mc.ToCommit(_serializer))
             )
             .ToAsyncEnumerable();
         }
 
 
-        
+
     }
 }

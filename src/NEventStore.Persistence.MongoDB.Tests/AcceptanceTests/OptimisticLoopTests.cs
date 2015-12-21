@@ -48,8 +48,8 @@ namespace NEventStore.Persistence.MongoDB.Tests.AcceptanceTests
 
     public class when_a_reader_observe_commits_from_a_lot_of_writers : SpecificationBase
     {
-        protected const int IterationsPerWriter = 40;
-        protected const int ParallelWriters = 60;
+        protected const int IterationsPerWriter = 5;
+        protected const int ParallelWriters = 5;
         protected const int PollingInterval = 1;
         readonly IList<IPersistStreams> _writers = new List<IPersistStreams>();
         private PollingClient _client;
@@ -300,7 +300,8 @@ namespace NEventStore.Persistence.MongoDB.Tests.AcceptanceTests
 
         protected override async Task Because()
         {
-            var mongoEngine = (MongoPersistenceEngine)(((PerformanceCounterPersistenceEngine)Persistence).UnwrapPersistenceEngine());
+            //var mongoEngine = (MongoPersistenceEngine)(((PerformanceCounterPersistenceEngine)Persistence).UnwrapPersistenceEngine());
+            var mongoEngine = (MongoPersistenceEngine)Persistence;
             await mongoEngine.EmptyRecycleBin();
             _commits = await mongoEngine.GetDeletedCommits().ToArray();
         }
@@ -334,7 +335,8 @@ namespace NEventStore.Persistence.MongoDB.Tests.AcceptanceTests
 
         protected override async Task Because()
         {
-            var mongoEngine = (MongoPersistenceEngine)(((PerformanceCounterPersistenceEngine)Persistence).UnwrapPersistenceEngine());
+            //var mongoEngine = (MongoPersistenceEngine)(((PerformanceCounterPersistenceEngine)Persistence).UnwrapPersistenceEngine());
+            var mongoEngine = (MongoPersistenceEngine)Persistence;
             await mongoEngine.EmptyRecycleBin();
             _commits = await mongoEngine.GetDeletedCommits().ToArray();
         }

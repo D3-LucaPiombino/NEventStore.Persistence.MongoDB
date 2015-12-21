@@ -1,4 +1,8 @@
-﻿namespace NEventStore.Persistence.MongoDB.Tests
+﻿using Xunit;
+
+[assembly: CollectionBehavior(DisableTestParallelization = true)]
+
+namespace NEventStore.Persistence.MongoDB.Tests
 {
     using System;
     using NEventStore.Serialization;

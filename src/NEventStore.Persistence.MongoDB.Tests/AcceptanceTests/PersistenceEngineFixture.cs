@@ -7,7 +7,7 @@ namespace NEventStore.Persistence.AcceptanceTests
     {
         public PersistenceEngineFixture()
         {
-            _createPersistence = _ => new AcceptanceTestMongoPersistenceFactory().Build();
+            _createPersistence = (_, systemTimeProvider) => new AcceptanceTestMongoPersistenceFactory().Build();
         }
     }
 }

@@ -38,9 +38,9 @@
             chkNum2.Should().BeGreaterThan(chkNum1);
         }
 
-        protected override void Cleanup()
+        protected override async Task Cleanup()
         {
-            _process1.Drop();
+            await _process1.Drop();
             _process1.Dispose();
             _process2.Dispose();
         }

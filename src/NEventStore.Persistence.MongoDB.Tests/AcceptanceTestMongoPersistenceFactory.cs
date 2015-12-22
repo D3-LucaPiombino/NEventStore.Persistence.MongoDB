@@ -1,4 +1,8 @@
-﻿namespace NEventStore.Persistence.MongoDB.Tests
+﻿using Xunit;
+
+[assembly: CollectionBehavior(DisableTestParallelization = true)]
+
+namespace NEventStore.Persistence.MongoDB.Tests
 {
     using System;
     using NEventStore.Serialization;
@@ -13,7 +17,8 @@
 
         private static string GetConnectionString()
         {
-            string connectionString = Environment.GetEnvironmentVariable(EnvVarKey, EnvironmentVariableTarget.Process);
+            string connectionString = Environment.GetEnvironmentVariable(EnvVarKey, EnvironmentVariableTarget.Process)
+                ?? "mongodb://vi-dbdb-01.deltatre.it:27017/NEventStore_Tests";
 
             if (connectionString == null)
             {

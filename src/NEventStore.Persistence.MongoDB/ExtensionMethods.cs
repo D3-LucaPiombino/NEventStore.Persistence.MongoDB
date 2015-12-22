@@ -13,6 +13,8 @@
 
     public static class ExtensionMethods
     {
+        private static readonly FilterDefinitionBuilder<BsonDocument> Filter = Builders<BsonDocument>.Filter;
+
         public static Dictionary<Tkey, Tvalue> AsDictionary<Tkey, Tvalue>(this BsonValue bsonValue)
         {
             using (BsonReader reader = new JsonReader(bsonValue.ToJson()))
@@ -101,11 +103,11 @@
                 return null;
             }
 
-            BsonDocument id = doc[MongoShapshotFields.Id].AsBsonDocument;
-            string bucketId = id[MongoShapshotFields.BucketId].AsString;
-            string streamId = id[MongoShapshotFields.StreamId].AsString;
-            int streamRevision = id[MongoShapshotFields.StreamRevision].AsInt32;
-            BsonValue bsonPayload = doc[MongoShapshotFields.Payload];
+            var id = doc[MongoShapshotFields.Id].AsBsonDocument;
+            var bucketId = id[MongoShapshotFields.BucketId].AsString;
+            var streamId = id[MongoShapshotFields.StreamId].AsString;
+            var streamRevision = id[MongoShapshotFields.StreamRevision].AsInt32;
+            var bsonPayload = doc[MongoShapshotFields.Payload];
 
             object payload;
             switch (bsonPayload.BsonType)
@@ -126,47 +128,56 @@
 
         public static StreamHead ToStreamHead(this BsonDocument doc)
         {
-            BsonDocument id = doc[MongoStreamHeadFields.Id].AsBsonDocument;
-            string bucketId = id[MongoStreamHeadFields.BucketId].AsString;
-            string streamId = id[MongoStreamHeadFields.StreamId].AsString;
-            return new StreamHead(bucketId, streamId, doc[MongoStreamHeadFields.HeadRevision].AsInt32, doc[MongoStreamHeadFields.SnapshotRevision].AsInt32);
+            var id = doc[MongoStreamHeadFields.Id].AsBsonDocument;
+            var bucketId = id[MongoStreamHeadFields.BucketId].AsString;
+            var streamId = id[MongoStreamHeadFields.StreamId].AsString;
+            return new StreamHead(
+                bucketId, 
+                streamId, 
+                doc[MongoStreamHeadFields.HeadRevision].AsInt32, 
+                doc[MongoStreamHeadFields.SnapshotRevision].AsInt32
+            );
         }
 
         public static FilterDefinition<BsonDocument> ToMongoCommitIdQuery(this CommitAttempt commit)
         {
-            return Builders<BsonDocument>.Filter.And(
-                Builders<BsonDocument>.Filter.Eq(MongoCommitFields.BucketId, commit.BucketId),
-                Builders<BsonDocument>.Filter.Eq(MongoCommitFields.StreamId, commit.StreamId),
-                Builders<BsonDocument>.Filter.Eq(MongoCommitFields.CommitSequence, commit.CommitSequence)
-                );
+            return Filter.And(
+                Filter.Eq(MongoCommitFields.BucketId, commit.BucketId),
+                Filter.Eq(MongoCommitFields.StreamId, commit.StreamId),
+                Filter.Eq(MongoCommitFields.CommitSequence, commit.CommitSequence)
+            );
         }
 
         public static FilterDefinition<BsonDocument> ToMongoCommitIdQuery(this ICommit commit)
         {
-            return Builders<BsonDocument>.Filter.And(
-                Builders<BsonDocument>.Filter.Eq(MongoCommitFields.BucketId, commit.BucketId),
-                Builders<BsonDocument>.Filter.Eq(MongoCommitFields.StreamId, commit.StreamId),
-                Builders<BsonDocument>.Filter.Eq(MongoCommitFields.CommitSequence, commit.CommitSequence)
-                );
+            return Filter.And(
+                Filter.Eq(MongoCommitFields.BucketId, commit.BucketId),
+                Filter.Eq(MongoCommitFields.StreamId, commit.StreamId),
+                Filter.Eq(MongoCommitFields.CommitSequence, commit.CommitSequence)
+            );
         }
 
         public static FilterDefinition<BsonDocument> GetSnapshotQuery(string bucketId, string streamId, int maxRevision)
         {
-            return
-                Builders<BsonDocument>.Filter.And(
-                    Builders<BsonDocument>.Filter.Gt(MongoShapshotFields.Id,
-                        Builders<BsonDocument>.Filter.And(
-                            Builders<BsonDocument>.Filter.Eq(MongoShapshotFields.BucketId, bucketId),
-                            Builders<BsonDocument>.Filter.Eq(MongoShapshotFields.StreamId, streamId),
-                            Builders<BsonDocument>.Filter.Eq(MongoShapshotFields.StreamRevision, BsonNull.Value)
-                        )),
-                    Builders<BsonDocument>.Filter.Lte(MongoShapshotFields.Id,
-                        Builders<BsonDocument>.Filter.And(
-                            Builders<BsonDocument>.Filter.Eq(MongoShapshotFields.BucketId, bucketId),
-                            Builders<BsonDocument>.Filter.Eq(MongoShapshotFields.StreamId, streamId),
-                            Builders<BsonDocument>.Filter.Eq(MongoShapshotFields.StreamRevision, maxRevision)
-                         ))
-                    );
+
+            return Filter.And(
+                Filter.Gt(MongoShapshotFields.Id,
+                    new BsonDocument
+                    {
+                        {MongoStreamHeadFields.BucketId, bucketId},
+                        {MongoStreamHeadFields.StreamId, streamId},
+                        {MongoShapshotFields.StreamRevision, BsonNull.Value }
+                    }
+                ),
+                Filter.Lte(MongoShapshotFields.Id,
+                    new BsonDocument
+                    {
+                        {MongoStreamHeadFields.BucketId, bucketId},
+                        {MongoStreamHeadFields.StreamId, streamId},
+                        {MongoShapshotFields.StreamRevision, maxRevision }
+                    }
+                )
+            );
         }
     }
 }
